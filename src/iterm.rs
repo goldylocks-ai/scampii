@@ -179,15 +179,14 @@ pub fn draw_iterm<Out: Write>(
     base64_encode(buf, &mut b64);
 
     // Build OSC 1337 sequence.
-    // Specifying width/height in pixels makes the terminal reserve the
-    // correct cell space so the image flows inline with text instead of
-    // floating disconnected (which breaks on terminal resize).
+    // Do NOT specify width/height — letting the terminal auto-size from the
+    // PNG dimensions keeps the image at the correct 1:1 pixel scale. Forcing
+    // pixel dimensions causes some terminals to upscale dramatically.
     buf.clear();
     buf.extend_from_slice(b"\x1b]1337;File=inline=1;size=");
     let size_str = png_size.to_string();
     buf.extend_from_slice(size_str.as_bytes());
-    let dims = format!(";width={}px;height={}px;preserveAspectRatio=1:", w, h);
-    buf.extend_from_slice(dims.as_bytes());
+    buf.extend_from_slice(b";preserveAspectRatio=1:");
     buf.extend_from_slice(&b64);
     buf.push(0x07); // BEL terminator
 

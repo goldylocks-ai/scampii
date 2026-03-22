@@ -36,13 +36,6 @@ pub fn draw_kitty<Out: Write>(
     let scale = scale.clamp(1, MAX_SCALE);
     let (rgba, w, h) = rasterise_padded(frame, theme, scale);
 
-    // Estimate cell dimensions so the terminal reserves the correct space
-    // in the text flow. Uses conservative cell-size estimates (8×16 px).
-    // The `r` / `c` keys tell Kitty how many rows/columns the image spans,
-    // preventing it from floating disconnected on resize.
-    let cols = (w + 7) / 8;
-    let rows = (h + 15) / 16;
-
     // Base64 encode the raw RGBA data into buf
     buf.clear();
     base64_encode(&rgba, buf);
@@ -54,8 +47,8 @@ pub fn draw_kitty<Out: Write>(
     if total_len <= CHUNK_SIZE {
         // Single chunk: a=T (transmit and display), f=32 (RGBA), t=d (direct data)
         let header = format!(
-            "\x1b_Gf=32,s={},v={},c={},r={},a=T,t=d;",
-            w, h, cols, rows
+            "\x1b_Gf=32,s={},v={},a=T,t=d;",
+            w, h
         );
         out.write_all(header.as_bytes())?;
         out.write_all(buf)?;
@@ -77,8 +70,8 @@ pub fn draw_kitty<Out: Write>(
 
             if first {
                 let header = format!(
-                    "\x1b_Gf=32,s={},v={},c={},r={},a=T,t=d,m={};",
-                    w, h, cols, rows, m
+                    "\x1b_Gf=32,s={},v={},a=T,t=d,m={};",
+                    w, h, m
                 );
                 out.write_all(header.as_bytes())?;
                 first = false;
