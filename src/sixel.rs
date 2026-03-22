@@ -9,7 +9,7 @@ use std::io::Write;
 use crate::error::ScampiiError;
 use crate::frame::{PackedFrame, COMPACT_X0};
 use crate::pixel::{unpack_pixel, HUE_COUNT};
-use crate::raster::{CROP_H, CROP_W, MAX_SCALE};
+use crate::raster::{CROP_H, CROP_W, MAX_SCALE, VERT_PAD};
 use crate::theme::Theme;
 
 // ---------------------------------------------------------------------------
@@ -33,7 +33,8 @@ pub fn draw_sixel<Out: Write>(
     let scale = scale.clamp(1, MAX_SCALE);
     let s = scale as usize;
     let img_w = CROP_W * s;
-    let img_h = CROP_H * s;
+    let pad_rows = VERT_PAD * s;
+    let img_h = CROP_H * s + pad_rows;
 
     buf.clear();
 
@@ -54,7 +55,9 @@ pub fn draw_sixel<Out: Write>(
         buf.extend_from_slice(def.as_bytes());
     }
 
-    // Build a color index map for the scaled image.
+    // Build a color index map for the scaled image with top padding.
+    // The first `pad_rows` pixel rows are transparent (0) so the sprite
+    // sits lower in the terminal cell grid for inline vertical centering.
     // 0 = transparent, 1..=HUE_COUNT = color index + 1
     let mut color_map = vec![0u8; img_w * img_h];
     for (y, row) in frame.iter().enumerate().take(CROP_H) {
@@ -65,7 +68,7 @@ pub fn draw_sixel<Out: Write>(
                 for sy in 0..s {
                     for sx in 0..s {
                         let px_x = x * s + sx;
-                        let px_y = y * s + sy;
+                        let px_y = pad_rows + y * s + sy;
                         color_map[px_y * img_w + px_x] = ci + 1; // +1 so 0 = transparent
                     }
                 }

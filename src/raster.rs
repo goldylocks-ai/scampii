@@ -22,6 +22,15 @@ pub const CROP_H: usize = FRAME_HEIGHT;
 /// and all image-protocol renderers clamp to this value.
 pub const MAX_SCALE: u8 = 16;
 
+/// Transparent top padding added when rasterising for inline display.
+///
+/// Image-protocol images are top-aligned in the terminal cell grid. Without
+/// padding the sprite sits at the very top of its block, forcing every
+/// embedder to add their own top margin. Two sprite-pixel rows of padding
+/// shifts the visible content down so it is roughly vertically centred at
+/// the default `scale = 1` size (~2 text lines).
+pub(crate) const VERT_PAD: usize = 2;
+
 // ---------------------------------------------------------------------------
 // Base64
 // ---------------------------------------------------------------------------
@@ -98,6 +107,33 @@ pub fn rasterise(frame: &PackedFrame, theme: &Theme, scale: u8) -> (Vec<u8>, u32
     }
 
     (rgba, w as u32, h as u32)
+}
+
+/// Rasterise a frame with transparent top padding for inline display.
+///
+/// Identical to [`rasterise`] but prepends [`VERT_PAD`] × `scale` rows of
+/// fully-transparent pixels so the image sits lower in the terminal cell
+/// grid. All image-protocol renderers (iTerm2, Kitty, Sixel) should prefer
+/// this variant so users don't have to manually add top margins.
+///
+/// Returns `(rgba_buffer, width_px, height_px)`.
+pub(crate) fn rasterise_padded(
+    frame: &PackedFrame,
+    theme: &Theme,
+    scale: u8,
+) -> (Vec<u8>, u32, u32) {
+    let s = scale.clamp(1, MAX_SCALE) as usize;
+    let (src, w, h) = rasterise(frame, theme, scale);
+    let w = w as usize;
+    let h = h as usize;
+    let pad_rows = VERT_PAD * s;
+    let new_h = h + pad_rows;
+
+    let mut padded = vec![0u8; w * new_h * 4]; // 0-filled = transparent
+    let offset = pad_rows * w * 4;
+    padded[offset..offset + src.len()].copy_from_slice(&src);
+
+    (padded, w as u32, new_h as u32)
 }
 
 // ---------------------------------------------------------------------------

@@ -8,7 +8,7 @@ use std::io::Write;
 
 use crate::error::ScampiiError;
 use crate::frame::PackedFrame;
-use crate::raster::{base64_encode, rasterise, MAX_SCALE};
+use crate::raster::{base64_encode, rasterise_padded, MAX_SCALE};
 use crate::theme::Theme;
 
 /// Maximum payload per Kitty graphics chunk (bytes of base64).
@@ -34,7 +34,14 @@ pub fn draw_kitty<Out: Write>(
     scale: u8,
 ) -> Result<(), ScampiiError> {
     let scale = scale.clamp(1, MAX_SCALE);
-    let (rgba, w, h) = rasterise(frame, theme, scale);
+    let (rgba, w, h) = rasterise_padded(frame, theme, scale);
+
+    // Estimate cell dimensions so the terminal reserves the correct space
+    // in the text flow. Uses conservative cell-size estimates (8×16 px).
+    // The `r` / `c` keys tell Kitty how many rows/columns the image spans,
+    // preventing it from floating disconnected on resize.
+    let cols = (w + 7) / 8;
+    let rows = (h + 15) / 16;
 
     // Base64 encode the raw RGBA data into buf
     buf.clear();
@@ -46,7 +53,10 @@ pub fn draw_kitty<Out: Write>(
 
     if total_len <= CHUNK_SIZE {
         // Single chunk: a=T (transmit and display), f=32 (RGBA), t=d (direct data)
-        let header = format!("\x1b_Gf=32,s={},v={},a=T,t=d;", w, h);
+        let header = format!(
+            "\x1b_Gf=32,s={},v={},c={},r={},a=T,t=d;",
+            w, h, cols, rows
+        );
         out.write_all(header.as_bytes())?;
         out.write_all(buf)?;
         out.write_all(b"\x1b\\")?;
@@ -66,7 +76,10 @@ pub fn draw_kitty<Out: Write>(
             let m = if is_last { 0 } else { 1 };
 
             if first {
-                let header = format!("\x1b_Gf=32,s={},v={},a=T,t=d,m={};", w, h, m);
+                let header = format!(
+                    "\x1b_Gf=32,s={},v={},c={},r={},a=T,t=d,m={};",
+                    w, h, cols, rows, m
+                );
                 out.write_all(header.as_bytes())?;
                 first = false;
             } else {
@@ -131,7 +144,7 @@ impl Default for KittyRenderer {
 mod tests {
     use super::*;
     use crate::frame::FRAMES;
-    use crate::raster::{CROP_H, CROP_W};
+    use crate::raster::{CROP_H, CROP_W, VERT_PAD};
 
     #[test]
     fn kitty_small_single_chunk() {
@@ -180,7 +193,7 @@ mod tests {
 
         let s = String::from_utf8_lossy(&out);
         let expected_w = CROP_W * scale as usize;
-        let expected_h = CROP_H * scale as usize;
+        let expected_h = (CROP_H + VERT_PAD) * scale as usize;
         let w_str = format!("s={}", expected_w);
         let h_str = format!("v={}", expected_h);
         assert!(

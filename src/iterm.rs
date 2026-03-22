@@ -8,7 +8,7 @@ use std::io::Write;
 
 use crate::error::ScampiiError;
 use crate::frame::PackedFrame;
-use crate::raster::{base64_encode, rasterise, MAX_SCALE};
+use crate::raster::{base64_encode, rasterise_padded, MAX_SCALE};
 use crate::theme::Theme;
 
 // ---------------------------------------------------------------------------
@@ -167,7 +167,7 @@ pub fn draw_iterm<Out: Write>(
     scale: u8,
 ) -> Result<(), ScampiiError> {
     let scale = scale.clamp(1, MAX_SCALE);
-    let (rgba, w, h) = rasterise(frame, theme, scale);
+    let (rgba, w, h) = rasterise_padded(frame, theme, scale);
 
     // Encode PNG
     buf.clear();
@@ -178,13 +178,16 @@ pub fn draw_iterm<Out: Write>(
     let mut b64 = Vec::with_capacity((png_size * 4 / 3) + 4);
     base64_encode(buf, &mut b64);
 
-    // Build OSC 1337 sequence
+    // Build OSC 1337 sequence.
+    // Specifying width/height in pixels makes the terminal reserve the
+    // correct cell space so the image flows inline with text instead of
+    // floating disconnected (which breaks on terminal resize).
     buf.clear();
     buf.extend_from_slice(b"\x1b]1337;File=inline=1;size=");
-    // Write size as decimal
     let size_str = png_size.to_string();
     buf.extend_from_slice(size_str.as_bytes());
-    buf.extend_from_slice(b";preserveAspectRatio=1:");
+    let dims = format!(";width={}px;height={}px;preserveAspectRatio=1:", w, h);
+    buf.extend_from_slice(dims.as_bytes());
     buf.extend_from_slice(&b64);
     buf.push(0x07); // BEL terminator
 
